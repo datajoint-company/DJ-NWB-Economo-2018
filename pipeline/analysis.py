@@ -22,8 +22,8 @@ class TrialSegmentationSetting(dj.Lookup):
     trial_seg_setting: smallint
     ---
     -> reference.ExperimentalEvent
-    pre_stim_duration: decimal(4,2)  # (s) pre-stimulus duration
-    post_stim_duration: decimal(4,2)  # (s) post-stimulus duration
+    pre_stim_duration: decimal(6,4)  # (s) pre-stimulus duration
+    post_stim_duration: decimal(6,4)  # (s) post-stimulus duration
     """
     contents = [[0, 'cue_start', 3.3975, 2.9975]]
 

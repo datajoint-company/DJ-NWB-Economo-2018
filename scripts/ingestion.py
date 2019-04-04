@@ -9,9 +9,10 @@ import pandas as pd
 from tqdm import tqdm
 import glob
 import datajoint as dj
+from collections import Iterable
 
 from pipeline import (reference, subject, acquisition,
-                      extracellular, behavior, utilities)
+                      extracellular, behavior, analysis, utilities)
 
 # ================== Setup ==================
 hemi_dict = {'L': 'left', 'R': 'right', 'B': 'bilateral'}
@@ -119,49 +120,60 @@ for fname in fnames:
                                                           ignore_extra_fields = True, skip_duplicates = True)
 
         # --- Extracellular ---
+        if sess_meta.unitNumber < 2:
+            sess_meta.unitNum = sess_meta.unitNum,
+            sess_obj.eventSeriesHash.value = sess_obj.eventSeriesHash.value,
+            sess_meta.depth = sess_meta.depth,
+            sess_meta.channel = sess_meta.channel,
+
         unit_cell_type = cell_type_tag[os.path.split(fname)[-1].replace('.mat', '')]
         trial_cue = sess_obj.trialPropertiesHash.value[2] * trial_time_convert
         trial_start = sess_obj.trialStartTimes * trial_time_convert
 
         def extract_unit_data():
-            if sess_meta.unitNumber < 2:
-                sess_obj.eventSeriesHash.keyNames = sess_obj.eventSeriesHash.keyNames,
-                sess_obj.eventSeriesHash.value = sess_obj.eventSeriesHash.value,
-                sess_meta.depth = sess_meta.depth,
-                sess_meta.channel = sess_meta.channel,
             for unit_id, unit_val, unit_depth, unit_chn in zip(
-                    sess_obj.eventSeriesHash.keyNames, sess_obj.eventSeriesHash.value,
+                    sess_meta.unitNum, sess_obj.eventSeriesHash.value,
                     sess_meta.depth, sess_meta.channel):
                 unit_time_convert = utilities.time_unit_conversion_factor[sess_obj.timeUnitNames[unit_val.timeUnit - 1]]  # (-1) to take into account Matlab's 1-based indexing
+                cell_type = 'unidentified' if unit_id <= 1000 else unit_cell_type if unit_id <= 2000 else 'L6 corticothalamic'
                 # -- reconstruct session-long spike times from trial-based cue-aligned spike times
+                if not isinstance(unit_val.eventTrials, Iterable):
+                    print(unit_val.eventTrials)
+                    unit_val.eventTrials = np.array([unit_val.eventTrials])
                 trial_based_timeshift = np.array([trial_start[tr] + trial_cue[tr] for tr in unit_val.eventTrials - 1])
                 unit_sess_spike_times = unit_val.eventTimes * unit_time_convert + trial_based_timeshift
-                yield (int(re.search('\d+', unit_id).group()), unit_depth,
+                yield (unit_id, unit_depth, cell_type,
                        unit_chn, str(unit_val.quality), unit_sess_spike_times)
 
-        extracellular.UnitSpikeTimes.insert(
-            (dict(probe_insert, unit_id=unit_id, channel_id=chn, unit_cell_type=unit_cell_type,
-                  unit_quality=quality, unit_depth=unit_depth, spike_times=spike_times)
-             for unit_id, unit_depth, chn, quality, spike_times in extract_unit_data()), skip_duplicates=True)
+        if not (extracellular.UnitSpikeTimes & probe_insert):
+            extracellular.UnitSpikeTimes.insert(
+                (dict(probe_insert, unit_id=unit_id, channel_id=chn, unit_cell_type=unit_cell_type,
+                      unit_quality=quality, unit_depth=unit_depth, spike_times=spike_times)
+                 for unit_id, unit_depth, unit_cell_type, chn, quality, spike_times in extract_unit_data()), skip_duplicates=True)
 
         # --- Behavior ---
         # reconstruct session-long lick times from trial-aligned lick times
-        left_licks = np.hstack(licks * trial_time_convert + trial_start[l_idx]
-                                    for l_idx, licks in enumerate(sess_obj.trialPropertiesHash.value[5]))
-        right_licks = np.hstack(licks * trial_time_convert + trial_start[l_idx]
-                                    for l_idx, licks in enumerate(sess_obj.trialPropertiesHash.value[6]))
+        if not (behavior.LickTimes & session_info):
+            left_licks = np.hstack(licks * trial_time_convert + trial_start[l_idx]
+                                        for l_idx, licks in enumerate(sess_obj.trialPropertiesHash.value[5]))
+            right_licks = np.hstack(licks * trial_time_convert + trial_start[l_idx]
+                                        for l_idx, licks in enumerate(sess_obj.trialPropertiesHash.value[6]))
 
-        behavior.LickTimes.insert1(dict(session_info, lick_left_times=left_licks, lick_right_times=right_licks),
-                                   skip_duplicates=True)
+            behavior.LickTimes.insert1(dict(session_info, lick_left_times=left_licks, lick_right_times=right_licks),
+                                       skip_duplicates=True)
+
+        # --- Cue-start aligned spike times
+        extracellular.TrialSegmentedUnitSpikeTimes.populate(probe_insert)
 
         # --- PSTH - the PSTH are actually already computed and now needed to be imported into DJ pipeline
+        # Pre-computed PSTH are time-locked to cue-start (-3.3975s to 2.9975s)
         if sess_psth.ndim < 3:
             sess_psth = sess_psth.reshape((sess_psth.shape[0], 1, sess_psth.shape[1]))
         for unit_idx, psths in enumerate(sess_psth.transpose((1, 2, 0))):
-            extracellular.UnitPSTH.insert((dict(
+            extracellular.PSTH.insert((dict(
                 probe_insert,
-                unit_id=int(re.search('\d+', sess_obj.eventSeriesHash.keyNames[unit_idx]).group()),
-                trial_id=trial_idx+1,
+                unit_id=sess_meta.unitNum[unit_idx],
+                trial_id=trial_idx+1, trial_seg_setting=0,
                 psth=psth, psth_time=mat['time']) for trial_idx, psth in enumerate(psths)),
                 skip_duplicates=True, allow_direct_insert=True)
 
