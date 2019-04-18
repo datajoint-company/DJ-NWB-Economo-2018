@@ -105,33 +105,6 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
                                         data = np.full_like(b_v, 1),
                                         timestamps=b_v)
 
-    # =============== Photostimulation ====================
-    photostim = ((stimulation.PhotoStimulation & session_key).fetch1()
-                       if stimulation.PhotoStimulation & session_key
-                       else None)
-    if photostim:
-        photostim_device = (stimulation.PhotoStimDevice & photostim).fetch1()
-        stim_device = nwbfile.create_device(name=photostim_device['device_name'])
-        stim_site = pynwb.ogen.OptogeneticStimulusSite(
-            name='-'.join([photostim['hemisphere'], photostim['brain_region']]),
-            device=stim_device,
-            excitation_lambda=float((stimulation.PhotoStimProtocol & photostim).fetch1('photo_stim_excitation_lambda')),
-            location = '; '.join([f'{k}: {str(v)}' for k, v in
-                                  (reference.ActionLocation & photostim).fetch1().items()]),
-            description=(stimulation.PhotoStimProtocol & photostim).fetch1('photo_stim_notes'))
-        nwbfile.add_ogen_site(stim_site)
-
-        if photostim['photostim_timeseries'] is not None:
-            nwbfile.add_stimulus(pynwb.ogen.OptogeneticSeries(
-                name='_'.join(['photostim_on', photostim['photostim_datetime'].strftime('%Y-%m-%d_%H-%M-%S')]),
-                site=stim_site,
-                unit = 'mW',
-                resolution = 0.0,
-                conversion = 1e-6,
-                data = photostim['photostim_timeseries'],
-                starting_time = photostim['photostim_start_time'],
-                rate = photostim['photostim_sampling_rate']))
-
     # =============== TrialSet ====================
     # NWB 'trial' (of type dynamic table) by default comes with three mandatory attributes:
     #                                                                       'id', 'start_time' and 'stop_time'.
@@ -141,9 +114,9 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
         # Get trial descriptors from TrialSet.Trial and TrialStimInfo
         trial_columns = [{'name': tag,
                           'description': re.sub('\s+:|\s+', ' ', re.search(
-                              f'(?<={tag})(.*)', str((acquisition.TrialSet.Trial * stimulation.TrialPhotoStimParam).heading)).group())}
-                         for tag in (acquisition.TrialSet.Trial * stimulation.TrialPhotoStimParam).fetch(as_dict=True, limit=1)[0].keys()
-                         if tag not in (acquisition.TrialSet.Trial & stimulation.TrialPhotoStimParam).primary_key + ['start_time', 'stop_time']]
+                              f'(?<={tag})(.*)', str(acquisition.TrialSet.Trial.heading)).group())}
+                         for tag in acquisition.TrialSet.Trial.fetch(as_dict=True, limit=1)[0].keys()
+                         if tag not in acquisition.TrialSet.Trial.primary_key + ['start_time', 'stop_time']]
 
         # Trial Events - discard 'trial_start' and 'trial_stop' as we already have start_time and stop_time
         trial_events = set(((acquisition.TrialSet.EventTime & session_key)
@@ -156,18 +129,13 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
         for c in trial_columns + event_names:
             nwbfile.add_trial_column(**c)
 
-        photostim_tag_default = {tag: '' for tag in stimulation.TrialPhotoStimParam().fetch(as_dict=True, limit=1)[0].keys()
-                                 if tag not in stimulation.TrialPhotoStimParam.primary_key}
         # Add entry to the trial-table
         for trial in (acquisition.TrialSet.Trial & session_key).fetch(as_dict=True):
             events = dict(zip(*(acquisition.TrialSet.EventTime & trial
                                 & [{'trial_event': e} for e in trial_events]).fetch('trial_event', 'event_time')))
-            photostim_tag = (stimulation.TrialPhotoStimParam & trial).fetch(as_dict=True)
-            trial_tag_value = ({**trial, **events, **photostim_tag[0]}
-                               if len(photostim_tag) == 1 else {**trial, **events, **photostim_tag_default})
+            trial_tag_value = {**trial, **events, 'stop_time': np.nan}  # No stop_time available for this dataset
 
             trial_tag_value['id'] = trial_tag_value['trial_id']  # rename 'trial_id' to 'id'
-            trial_tag_value['delay_duration'] = float(trial_tag_value['delay_duration'])  # convert Decimal to float
             # convert None to np.nan since nwb fields does not take None
             for k, v in trial_tag_value.items():
                 trial_tag_value[k] = v if v is not None else np.nan
