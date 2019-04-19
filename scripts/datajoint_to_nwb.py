@@ -142,8 +142,32 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
             [trial_tag_value.pop(k) for k in acquisition.TrialSet.Trial.primary_key]
             nwbfile.add_trial(**trial_tag_value)
 
+    # trial-aligned unit PSTH
+    # create unit and trial "region"
+    unit_regions = {u: nwbfile.units.create_region(name='', region=[no], description='')
+                    for no, u in enumerate(nwbfile.units.id.data)}
+    trial_regions = {u: nwbfile.trials.create_region(name = '', region = [no], description = '')
+                    for no, u in enumerate(nwbfile.trials.id.data)}
+
+    PSTH = pynwb.core.DynamicTable(name='PSTH', description='trial-aligned unit PSTH')
+    PSTH.add_column(name='unit_id', description='')
+    PSTH.add_column(name='trial_id', description='')
+    PSTH.add_column(name='psth', description='')
+    PSTH.add_column(name='psth_time', description = '')
+
+    for unit_id, trial_id, psth, psth_time in zip(*(extracellular.PSTH & session_key).fetch(
+            'unit_id', 'trial_id', 'psth', 'psth_time')):
+        PSTH.add_row({'unit_id': unit_regions[unit_id],
+                      'trial_id': trial_regions[trial_id],
+                      'psth': psth,
+                      'psth_time': psth_time})
+
+    psth_mod = nwbfile.create_processing_module(name='ecephys', description='trial-aligned unit PSTH')
+    psth_mod.add_data_interface(PSTH)
+
     # =============== Write NWB 2.0 file ===============
     with NWBHDF5IO(os.path.join(save_path, save_file_name), mode = 'w') as io:
         io.write(nwbfile)
         print(f'Write NWB 2.0 file: {save_file_name}')
+
 
