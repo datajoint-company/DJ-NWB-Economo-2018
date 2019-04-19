@@ -143,17 +143,17 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
             nwbfile.add_trial(**trial_tag_value)
 
     # trial-aligned unit PSTH
-    # create unit and trial "region"
+    # create unit and trial "dynamic-table-region"
     unit_regions = {u: nwbfile.units.create_region(name='', region=[no], description='')
                     for no, u in enumerate(nwbfile.units.id.data)}
     trial_regions = {u: nwbfile.trials.create_region(name = '', region = [no], description = '')
                     for no, u in enumerate(nwbfile.trials.id.data)}
 
     PSTH = pynwb.core.DynamicTable(name='PSTH', description='trial-aligned unit PSTH')
-    PSTH.add_column(name='unit_id', description='')
-    PSTH.add_column(name='trial_id', description='')
-    PSTH.add_column(name='psth', description='')
-    PSTH.add_column(name='psth_time', description = '')
+    PSTH.add_column(name='unit_id', description='unit_id - link to the units table')
+    PSTH.add_column(name='trial_id', description='trial_id - link to the trial table')
+    PSTH.add_column(name='psth', description='trial-aligned unit PSTH')
+    PSTH.add_column(name='psth_time', description = 'timestamps of the PSTH')
 
     for unit_id, trial_id, psth, psth_time in zip(*(extracellular.PSTH & session_key).fetch(
             'unit_id', 'trial_id', 'psth', 'psth_time')):
