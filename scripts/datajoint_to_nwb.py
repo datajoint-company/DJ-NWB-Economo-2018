@@ -17,22 +17,20 @@ import pynwb
 from pynwb import NWBFile, NWBHDF5IO
 
 warnings.filterwarnings('ignore', module='pynwb')
-# =============================================
-# Each NWBFile represent a session, thus for every session in acquisition.Session, we build one NWBFile
-overwrite = False
-save_path = os.path.join('data', 'NWB 2.0')
-if not os.path.exists(save_path):
-    os.makedirs(save_path)
 
-for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
+# ============================== SET CONSTANTS ==========================================
+default_nwb_output_dir = os.path.join('data', 'NWB 2.0')
+zero_zero_time = datetime.strptime('00:00:00', '%H:%M:%S').time()  # no precise time available
+hardware_filter = 'Bandpass filtered 300-6K Hz'
+institution = 'Janelia Research Campus'
+
+
+def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False, overwrite=True):
     this_session = (acquisition.Session & session_key).fetch1()
-    # Overwrite?
+
     identifier = '_'.join([this_session['subject_id'],
                            this_session['session_time'].strftime('%Y-%m-%d'),
                            str(this_session['session_id'])])
-    save_file_name = ''.join([identifier, '.nwb'])
-    if not overwrite and os.path.exists(os.path.join(save_path, save_file_name)):
-        continue
     # =============== General ====================
     # -- NWB file - a NWB2.0 file for each session
     nwbfile = NWBFile(
@@ -41,8 +39,8 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
         session_start_time=this_session['session_time'],
         file_create_date=datetime.now(tzlocal()),
         experimenter='; '.join((acquisition.Session.Experimenter & session_key).fetch('experimenter')),
-        institution='Janelia Research Campus',  # TODO: not in pipeline
-        related_publications='https://doi.org/10.1038/s41586-018-0642-9')  # TODO: not in pipeline
+        institution=institution,
+        related_publications='https://doi.org/10.1038/s41586-018-0642-9')
     # -- subject
     subj = (subject.Subject & session_key).fetch1()
     nwbfile.subject = pynwb.file.Subject(
@@ -68,8 +66,8 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
         for chn in (reference.Probe.Channel & probe_insertion).fetch(as_dict=True):
             nwbfile.add_electrode(id=chn['channel_id'],
                                   group=electrode_group,
-                                  filtering='',  # TODO: not in pipeline
-                                  imp=-1.,  # TODO: not in pipeline
+                                  filtering=hardware_filter,
+                                  imp=-1.,
                                   x=0.0,  # not available from data
                                   y=0.0,  # not available from data
                                   z=0.0,  # not available from data
@@ -99,10 +97,10 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
         nwbfile.add_acquisition(behav_acq)
         [behavior_data.pop(k) for k in behavior.LickTimes.primary_key]
         for b_k, b_v in behavior_data.items():
-            behav_acq.create_timeseries(name = b_k,
-                                        unit = 'a.u.',
-                                        conversion = 1.0,
-                                        data = np.full_like(b_v, 1),
+            behav_acq.create_timeseries(name=b_k,
+                                        unit='a.u.',
+                                        conversion=1.0,
+                                        data=np.full_like(b_v, 1),
                                         timestamps=b_v)
 
     # =============== TrialSet ====================
@@ -147,7 +145,7 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
     unit_regions = {u: nwbfile.units.create_region(name='', region=[no], description='')
                     for no, u in enumerate(nwbfile.units.id.data)}
     trial_regions = {u: nwbfile.trials.create_region(name = '', region = [no], description = '')
-                    for no, u in enumerate(nwbfile.trials.id.data)}
+                     for no, u in enumerate(nwbfile.trials.id.data)}
 
     PSTH = pynwb.core.DynamicTable(name='PSTH', description='trial-aligned unit PSTH')
     PSTH.add_column(name='unit_id', description='unit_id - link to the units table')
@@ -166,8 +164,27 @@ for session_key in tqdm.tqdm(acquisition.Session.fetch('KEY')):
     psth_mod.add_data_interface(PSTH)
 
     # =============== Write NWB 2.0 file ===============
-    with NWBHDF5IO(os.path.join(save_path, save_file_name), mode = 'w') as io:
-        io.write(nwbfile)
-        print(f'Write NWB 2.0 file: {save_file_name}')
+    if save:
+        save_file_name = ''.join([nwbfile.identifier, '.nwb'])
+        if not os.path.exists(nwb_output_dir):
+            os.makedirs(nwb_output_dir)
+        if not overwrite and os.path.exists(os.path.join(nwb_output_dir, save_file_name)):
+            return nwbfile
+        with NWBHDF5IO(os.path.join(nwb_output_dir, save_file_name), mode = 'w') as io:
+            io.write(nwbfile)
+            print(f'Write NWB 2.0 file: {save_file_name}')
 
+    return nwbfile
+
+
+# ============================== EXPORT ALL ==========================================
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        nwb_outdir = sys.argv[1]
+    else:
+        nwb_outdir = default_nwb_output_dir
+
+    for skey in acquisition.Session.fetch('KEY'):
+        export_to_nwb(skey, nwb_output_dir=nwb_outdir, save=True)
 
