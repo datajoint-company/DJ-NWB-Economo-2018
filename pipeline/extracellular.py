@@ -81,7 +81,7 @@ class TrialSegmentedUnitSpikeTimes(dj.Computed):
 
 @schema
 class PSTH(dj.Computed):
-    definition = """  
+    definition = """  # PSTH per unit, per trial, time-locked to the response period (cue-start event)
     -> TrialSegmentedUnitSpikeTimes
     ---
     psth: longblob

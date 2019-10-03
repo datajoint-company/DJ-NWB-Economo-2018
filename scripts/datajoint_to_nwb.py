@@ -74,7 +74,7 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
                                   location=electrode_group.location)
 
         # --- unit spike times ---
-        nwbfile.add_unit_column(name='depth', description='depth this unit')
+        nwbfile.add_unit_column(name='depth', description='depth this unit (um)')
         nwbfile.add_unit_column(name='quality', description='spike width of this unit')
         nwbfile.add_unit_column(name='cell_type', description='cell type (e.g. wide width, narrow width spiking)')
 
@@ -119,7 +119,7 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
         # Trial Events - discard 'trial_start' and 'trial_stop' as we already have start_time and stop_time
         trial_events = set(((acquisition.TrialSet.EventTime & session_key)
                             - [{'trial_event': 'trial_start'}, {'trial_event': 'trial_stop'}]).fetch('trial_event'))
-        event_names = [{'name': e, 'description': d}
+        event_names = [{'name': e + '_time', 'description': d}
                        for e, d in zip(*(reference.ExperimentalEvent & [{'event': k}
                                                                         for k in trial_events]).fetch('event',
                                                                                                       'description'))]
@@ -129,8 +129,9 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
 
         # Add entry to the trial-table
         for trial in (acquisition.TrialSet.Trial & session_key).fetch(as_dict=True):
-            events = dict(zip(*(acquisition.TrialSet.EventTime & trial
-                                & [{'trial_event': e} for e in trial_events]).fetch('trial_event', 'event_time')))
+            tr_eves, tr_times = (acquisition.TrialSet.EventTime & trial
+                                 & [{'trial_event': e} for e in trial_events]).fetch('trial_event', 'event_time')
+            events = dict(zip([e + '_time' for e in tr_eves], tr_times))
             trial_tag_value = {**trial, **events, 'stop_time': np.nan}  # No stop_time available for this dataset
 
             trial_tag_value['id'] = trial_tag_value['trial_id']  # rename 'trial_id' to 'id'
@@ -142,12 +143,14 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
 
     # trial-aligned unit PSTH
     # create unit and trial "dynamic-table-region"
-    unit_regions = {u: nwbfile.units.create_region(name='', region=[no], description='')
+    unit_regions = {u: nwbfile.units.create_region(name='', region=[no],
+                                                   description='Dynamic table region for unit ' + str(u))
                     for no, u in enumerate(nwbfile.units.id.data)}
-    trial_regions = {u: nwbfile.trials.create_region(name = '', region = [no], description = '')
+    trial_regions = {u: nwbfile.trials.create_region(name='', region=[no],
+                                                     description='Dynamic table region for trial ' + str(u))
                      for no, u in enumerate(nwbfile.trials.id.data)}
 
-    PSTH = pynwb.core.DynamicTable(name='PSTH', description='trial-aligned unit PSTH')
+    PSTH = pynwb.core.DynamicTable(name='response-aligned PSTH', description='unit PSTH aligned to the response period (cue-start event)')
     PSTH.add_column(name='unit_id', description='unit_id - link to the units table')
     PSTH.add_column(name='trial_id', description='trial_id - link to the trial table')
     PSTH.add_column(name='psth', description='trial-aligned unit PSTH')
@@ -187,4 +190,3 @@ if __name__ == '__main__':
 
     for skey in acquisition.Session.fetch('KEY'):
         export_to_nwb(skey, nwb_output_dir=nwb_outdir, save=True)
-
