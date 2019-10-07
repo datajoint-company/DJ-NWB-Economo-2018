@@ -1,7 +1,7 @@
 # Economo-2018 - A DataJoint example
 This notebook presents data and results associated with the following papers:
 
->Michael N. Economo, Sarada Viswanathan, Bosiljka Tasic, Erhan Bas, Johan Winnubst, Vilas Menon, Lucas T. Graybuck,Thuc Nghi Nguyen, Kimberly A. Smith, Zizhen Yao, Lihua Wang, Charles R. Gerfen, Jayaram Chandrashekar, Hongkui Zeng, Loren L. Looger & Karel Svoboda. "Distinct descending motor cortex
+>Michael N. Economo, Sarada Viswanathan, Bosiljka Tasic, Erhan Bas, Johan Winnubst, Vilas Menon, Lucas T. Graybuck, Thuc Nghi Nguyen, Kimberly A. Smith, Zizhen Yao, Lihua Wang, Charles R. Gerfen, Jayaram Chandrashekar, Hongkui Zeng, Loren L. Looger & Karel Svoboda. "Distinct descending motor cortex
 pathways and their roles in movement" (2018) Nature (https://doi.org/10.1038/s41586-018-0642-9)
 
 The study identified two types of pyramidal track (PT) neuron in the mouse motor cortex, referred to as PT<sub>upper</sub> and PT<sub>lower</sub>. Further investigation using extracellular recordings in the anterior lateral motor cortex (ALM) during a delay-response task, the study revealed specialized roles for the two neuron types: i) PT<sub>upper</sub> neurons are preferentially involed in motor planning, ii) PT<sub>lower</sub> neurons are more involved in movement execution.  

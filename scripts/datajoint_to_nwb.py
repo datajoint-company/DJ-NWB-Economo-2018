@@ -4,12 +4,9 @@ import os
 import sys
 from datetime import datetime
 from dateutil.tz import tzlocal
-import pytz
 import re
 import numpy as np
-import pandas as pd
 import warnings
-import tqdm
 
 from pipeline import (reference, subject, acquisition, analysis,
                       extracellular, behavior, utilities)
@@ -23,6 +20,11 @@ default_nwb_output_dir = os.path.join('data', 'NWB 2.0')
 zero_zero_time = datetime.strptime('00:00:00', '%H:%M:%S').time()  # no precise time available
 hardware_filter = 'Bandpass filtered 300-6K Hz'
 institution = 'Janelia Research Campus'
+related_publications = 'doi:10.1038/s41586-018-0642-9'
+
+# experiment description and keywords - from the abstract
+experiment_description = 'Extracellular electrophysiology recordings performed on mouse anterior lateral motor cortex (ALM) in delay response task. Neural activity from two neuron populations, pyramidal track upper and lower, were characterized, in relation to movement execution.'
+keywords = ['motor planning', 'premotor cortex', 'preparatory activity', 'extracellular electrophysiology']
 
 
 def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False, overwrite=True):
@@ -40,7 +42,9 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
         file_create_date=datetime.now(tzlocal()),
         experimenter='; '.join((acquisition.Session.Experimenter & session_key).fetch('experimenter')),
         institution=institution,
-        related_publications='https://doi.org/10.1038/s41586-018-0642-9')
+        experiment_description=experiment_description,
+        related_publications=related_publications,
+        keywords=keywords)
     # -- subject
     subj = (subject.Subject & session_key).fetch1()
     nwbfile.subject = pynwb.file.Subject(
@@ -58,9 +62,9 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
         probe = nwbfile.create_device(name = probe_insertion['probe_name'])
         electrode_group = nwbfile.create_electrode_group(
             name='; '.join([f'{probe_insertion["probe_name"]}: {str(probe_insertion["channel_counts"])}']),
-            description = 'N/A',
-            device = probe,
-            location = '; '.join([f'{k}: {str(v)}' for k, v in
+            description='N/A',
+            device=probe,
+            location='; '.join([f'{k}: {str(v)}' for k, v in
                                   (reference.BrainLocation & probe_insertion).fetch1().items()]))
 
         for chn in (reference.Probe.Channel & probe_insertion).fetch(as_dict=True):
@@ -75,7 +79,7 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
 
         # --- unit spike times ---
         nwbfile.add_unit_column(name='depth', description='depth this unit (um)')
-        nwbfile.add_unit_column(name='quality', description='spike width of this unit')
+        nwbfile.add_unit_column(name='quality', description='quality of the spike sorted unit (e.g. excellent, good, poor, fair, etc.)')
         nwbfile.add_unit_column(name='cell_type', description='cell type (e.g. wide width, narrow width spiking)')
 
         for unit in (extracellular.UnitSpikeTimes & probe_insertion).fetch(as_dict=True):
@@ -110,13 +114,14 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
     # and column description)
     if acquisition.TrialSet & session_key:
         # Get trial descriptors from TrialSet.Trial and TrialStimInfo
-        trial_columns = [{'name': tag,
-                          'description': re.sub('\s+:|\s+', ' ', re.search(
-                              f'(?<={tag})(.*)', str(acquisition.TrialSet.Trial.heading)).group())}
-                         for tag in acquisition.TrialSet.Trial.fetch(as_dict=True, limit=1)[0].keys()
+        trial_columns = [{'name': tag.replace('trial_', ''),
+                          'description': re.search(
+                              f'(?<={tag})(.*)#(.*)', str(acquisition.TrialSet.Trial.heading)).groups()[-1].strip()}
+                         for tag in acquisition.TrialSet.Trial.heading.names
                          if tag not in acquisition.TrialSet.Trial.primary_key + ['start_time', 'stop_time']]
 
         # Trial Events - discard 'trial_start' and 'trial_stop' as we already have start_time and stop_time
+        # also add `_time` suffix to all events
         trial_events = set(((acquisition.TrialSet.EventTime & session_key)
                             - [{'trial_event': 'trial_start'}, {'trial_event': 'trial_stop'}]).fetch('trial_event'))
         event_names = [{'name': e + '_time', 'description': d}
@@ -129,9 +134,9 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
 
         # Add entry to the trial-table
         for trial in (acquisition.TrialSet.Trial & session_key).fetch(as_dict=True):
-            tr_eves, tr_times = (acquisition.TrialSet.EventTime & trial
-                                 & [{'trial_event': e} for e in trial_events]).fetch('trial_event', 'event_time')
-            events = dict(zip([e + '_time' for e in tr_eves], tr_times))
+            events = dict(zip(*(acquisition.TrialSet.EventTime & trial
+                                & [{'trial_event': e} for e in trial_events]).fetch('trial_event', 'event_time')))
+
             trial_tag_value = {**trial, **events, 'stop_time': np.nan}  # No stop_time available for this dataset
 
             trial_tag_value['id'] = trial_tag_value['trial_id']  # rename 'trial_id' to 'id'
@@ -139,32 +144,13 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
             for k, v in trial_tag_value.items():
                 trial_tag_value[k] = v if v is not None else np.nan
             [trial_tag_value.pop(k) for k in acquisition.TrialSet.Trial.primary_key]
-            nwbfile.add_trial(**trial_tag_value)
 
-    # trial-aligned unit PSTH
-    # create unit and trial "dynamic-table-region"
-    unit_regions = {u: nwbfile.units.create_region(name='', region=[no],
-                                                   description='Dynamic table region for unit ' + str(u))
-                    for no, u in enumerate(nwbfile.units.id.data)}
-    trial_regions = {u: nwbfile.trials.create_region(name='', region=[no],
-                                                     description='Dynamic table region for trial ' + str(u))
-                     for no, u in enumerate(nwbfile.trials.id.data)}
+            # Final tweaks: i) add '_time' suffix and ii) remove 'trial_' prefix
+            events = {k + '_time': trial_tag_value.pop(k) for k in events}
+            trial_attrs = {k.replace('trial_', ''): trial_tag_value.pop(k)
+                           for k in [n for n in trial_tag_value if n.startswith('trial_')]}
 
-    PSTH = pynwb.core.DynamicTable(name='response-aligned PSTH', description='unit PSTH aligned to the response period (cue-start event)')
-    PSTH.add_column(name='unit_id', description='unit_id - link to the units table')
-    PSTH.add_column(name='trial_id', description='trial_id - link to the trial table')
-    PSTH.add_column(name='psth', description='trial-aligned unit PSTH')
-    PSTH.add_column(name='psth_time', description = 'timestamps of the PSTH')
-
-    for unit_id, trial_id, psth, psth_time in zip(*(extracellular.PSTH & session_key).fetch(
-            'unit_id', 'trial_id', 'psth', 'psth_time')):
-        PSTH.add_row({'unit_id': unit_regions[unit_id],
-                      'trial_id': trial_regions[trial_id],
-                      'psth': psth,
-                      'psth_time': psth_time})
-
-    psth_mod = nwbfile.create_processing_module(name='ecephys', description='trial-aligned unit PSTH')
-    psth_mod.add_data_interface(PSTH)
+            nwbfile.add_trial(**trial_tag_value, **events, **trial_attrs)
 
     # =============== Write NWB 2.0 file ===============
     if save:

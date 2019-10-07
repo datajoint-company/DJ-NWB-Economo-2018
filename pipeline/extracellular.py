@@ -31,7 +31,7 @@ class UnitSpikeTimes(dj.Manual):
     ---
     -> reference.Probe.Channel
     unit_cell_type: enum('PTlower', 'PTupper', 'unidentified', 'L6 corticothalamic')  #  depending on the animal (which cell-type being tagged)
-    unit_quality="": varchar(32)  # 
+    unit_quality="": varchar(32)  #  quality of the spike sorted unit (e.g. excellent, good, poor, fair, etc.)
     unit_depth: float  # (um)
     spike_times: longblob  # (s) time of each spike, with respect to the start of session 
     """
