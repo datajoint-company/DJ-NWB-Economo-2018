@@ -10,6 +10,7 @@ from tqdm import tqdm
 import glob
 import datajoint as dj
 from collections import Iterable
+import pathlib
 
 from pipeline import (reference, subject, acquisition,
                       extracellular, behavior, analysis, utilities)
@@ -23,7 +24,7 @@ trial_type_and_response_dict = {0: ('lick right', 'correct'),
                                 4: ('lick right', 'no response'),
                                 5: ('lick left', 'no response')}
 # ================== Dataset ==================
-path = os.path.join('.', 'data', '7007846', 'Ephys', 'Code', 'ProcessedData')
+path = pathlib.Path(dj.config['custom'].get('data_directory')).as_posix()
 
 cell_type_tag = pd.read_excel(os.path.join(path, 'Animal Key.xlsx'),
                               index_col=0, usecols='A, B').to_dict().pop('Cell type tagged')
