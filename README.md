@@ -30,8 +30,64 @@ Each NWB file represents one recording session. The conversion script can be fou
 ## Demonstration of the data pipeline
 Data queries and usages are demonstrated in this [Jupyter Notebook](notebooks/Economo-2018-examples.ipynb), where several figures from the paper are reproduced. 
 
+## Instruction to execute this pipeline
 
+### Download original data 
 
+After cloning this repository, download the original data. Once downloaded, you should find a folder named `7007846` containing
+ multiple subfolders. In which, the electrophysiology data is at `.../7007846/Ephys/Code/ProcessedData`
+ 
+### Setup "dj_local_conf.json"
+
+`dj_local_conf.json` is a configuration file for DataJoint, which minimally specifies the
+ database connection information, as well as several other optional configurations.
+ 
+ Create a new `dj_local_conf.json` at the root of your project directory (where you have this repository cloned),
+  with the following format:
+ 
+ ```json
+{
+    "database.host": "database_hostname",
+    "database.user": "your_username_here",
+	"database.password": "your_password_here",
+    "database.port": 3306,
+    "database.reconnect": true,
+    "loglevel": "INFO",
+    "safemode": true,
+    "custom": {
+	    "database.prefix": "economo2018_",
+        "data_directory": ".../7007846/Ephys/Code/ProcessedData"
+    }
+}
+```
+
+Note: make sure to provide the correct database hostname, username and password.
+ Then specify the path to the downloaded data directories (fill in the `...` portion).
+
+### Ingest data into the pipeline
+
+On a new terminal, navigate to the root of your project directory, then execute the following command:
+
+```
+python scripts/ingestion.py
+```
+
+### Mission accomplished!
+You now have a functional pipeline up and running, with data fully ingested.
+ You can explore the data, starting with the provided demo notebook.
+ 
+From your project root, launch ***jupyter notebook***:
+```
+jupyter notebook
+```
+
+### Export to NWB 2.0
+Data from this DataJoint pipeline can be exported in NWB 2.0 format using this [datajoint_to_nwb.py](../scripts/datajoint_to_nwb.py) script. 
+To perform this export for all ingested data, specify the export location (e.g. `./data/exported_nwb2.0`), execute this command from the project root:
+
+```
+python scripts/datajoint_to_nwb.py ./data/exported_nwb2.0
+```
 
 
 
