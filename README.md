@@ -1,4 +1,4 @@
-# Economo-2018 - A DataJoint example
+# Economo et al., 2018 - A DataJoint example
 This notebook presents data and results associated with the following papers:
 
 >Michael N. Economo, Sarada Viswanathan, Bosiljka Tasic, Erhan Bas, Johan Winnubst, Vilas Menon, Lucas T. Graybuck, Thuc Nghi Nguyen, Kimberly A. Smith, Zizhen Yao, Lihua Wang, Charles R. Gerfen, Jayaram Chandrashekar, Hongkui Zeng, Loren L. Looger & Karel Svoboda. "Distinct descending motor cortex
