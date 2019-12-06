@@ -50,7 +50,6 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
     nwbfile.subject = pynwb.file.Subject(
         subject_id=this_session['subject_id'],
         description=subj['subject_description'],
-        genotype=' x '.join((subject.Subject.Allele & session_key).fetch('allele')),
         sex=subj['sex'],
         species=subj['species'])
 
@@ -71,10 +70,10 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
             nwbfile.add_electrode(id=chn['channel_id'],
                                   group=electrode_group,
                                   filtering=hardware_filter,
-                                  imp=-1.,
-                                  x=0.0,  # not available from data
-                                  y=0.0,  # not available from data
-                                  z=0.0,  # not available from data
+                                  imp=np.nan,
+                                  x=np.nan,  # not available from data
+                                  y=np.nan,  # not available from data
+                                  z=np.nan,  # not available from data
                                   location=electrode_group.location)
 
         # --- unit spike times ---
@@ -84,9 +83,10 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
 
         for unit in (extracellular.UnitSpikeTimes & probe_insertion).fetch(as_dict=True):
             # make an electrode table region (which electrode(s) is this unit coming from)
+            unit_chn = unit['channel_id'] if isinstance(unit['channel_id'], np.ndarray) else [unit['channel_id']]
+
             nwbfile.add_unit(id=unit['unit_id'],
-                             electrodes=(unit['channel_id']
-                                         if isinstance(unit['channel_id'], np.ndarray) else [unit['channel_id']]),
+                             electrodes=np.where(np.in1d(np.array(nwbfile.electrodes.id.data), unit_chn))[0],
                              depth=unit['unit_depth'],
                              quality=unit['unit_quality'],
                              cell_type=unit['unit_cell_type'],
@@ -97,14 +97,14 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
                      if behavior.LickTimes & session_key
                      else None)
     if behavior_data:
-        behav_acq = pynwb.behavior.BehavioralEvents(name = 'lick_times')
+        behav_acq = pynwb.behavior.BehavioralEvents(name='lick_times')
         nwbfile.add_acquisition(behav_acq)
         [behavior_data.pop(k) for k in behavior.LickTimes.primary_key]
         for b_k, b_v in behavior_data.items():
             behav_acq.create_timeseries(name=b_k,
                                         unit='a.u.',
                                         conversion=1.0,
-                                        data=np.full_like(b_v, 1),
+                                        data=np.full_like(b_v, 1).astype(bool),
                                         timestamps=b_v)
 
     # =============== TrialSet ====================
@@ -112,6 +112,11 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
     #                                                                       'id', 'start_time' and 'stop_time'.
     # Other trial-related information needs to be added in to the trial-table as additional columns (with column name
     # and column description)
+
+    # adjust trial event times to be relative to session's start time
+    q_trial_event = (acquisition.TrialSet.EventTime * acquisition.TrialSet.Trial.proj('start_time')).proj(
+            event_time='event_time + start_time')
+
     if acquisition.TrialSet & session_key:
         # Get trial descriptors from TrialSet.Trial and TrialStimInfo
         trial_columns = [{'name': tag.replace('trial_', ''),
@@ -122,6 +127,7 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
 
         # Trial Events - discard 'trial_start' and 'trial_stop' as we already have start_time and stop_time
         # also add `_time` suffix to all events
+
         trial_events = set(((acquisition.TrialSet.EventTime & session_key)
                             - [{'trial_event': 'trial_start'}, {'trial_event': 'trial_stop'}]).fetch('trial_event'))
         event_names = [{'name': e + '_time', 'description': d}
@@ -134,8 +140,8 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
 
         # Add entry to the trial-table
         for trial in (acquisition.TrialSet.Trial & session_key).fetch(as_dict=True):
-            events = dict(zip(*(acquisition.TrialSet.EventTime & trial
-                                & [{'trial_event': e} for e in trial_events]).fetch('trial_event', 'event_time')))
+            events = dict(zip(*(q_trial_event & trial & [{'trial_event': e}
+                                                         for e in trial_events]).fetch('trial_event', 'event_time')))
 
             trial_tag_value = {**trial, **events, 'stop_time': np.nan}  # No stop_time available for this dataset
 
