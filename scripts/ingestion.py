@@ -1,7 +1,4 @@
 import os
-import re
-from datetime import datetime
-
 import numpy as np
 from decimal import Decimal
 import scipy.io as sio
@@ -13,7 +10,7 @@ from collections import Iterable
 import pathlib
 
 from pipeline import (reference, subject, acquisition,
-                      extracellular, behavior, analysis, utilities)
+                      extracellular, behavior, utilities)
 
 # ================== Setup ==================
 hemi_dict = {'L': 'left', 'R': 'right', 'B': 'bilateral'}
@@ -118,7 +115,7 @@ for fname in fnames:
                     # -- events timing
                     acquisition.TrialSet.EventTime.insert((dict(trial_key, trial_event=k, event_time=e)
                                                            for k, e in events_time.items()),
-                                                          ignore_extra_fields = True, skip_duplicates = True)
+                                                          ignore_extra_fields=True, skip_duplicates=True)
 
         # --- Extracellular ---
         if sess_meta.unitNumber < 2:
@@ -128,8 +125,16 @@ for fname in fnames:
             sess_meta.channel = sess_meta.channel,
 
         unit_cell_type = cell_type_tag[os.path.split(fname)[-1].replace('.mat', '')]
-        trial_cue = sess_obj.trialPropertiesHash.value[2] * trial_time_convert
+        trial_cue = sess_obj.trialPropertiesHash.value[2] * trial_time_convert  # cue onset relative to the start of the behavior system
         trial_start = sess_obj.trialStartTimes * trial_time_convert
+
+        # cuetm: time of cue-onset with respect to the start of the ephys-recording system
+        cuetm = np.full_like(sess_obj.sessionMeta.bitcode, -1).astype(float)
+        cuetm[:len(sess_obj.sessionMeta.cuetm)] = sess_obj.sessionMeta.cuetm
+        cuetm = cuetm[sess_obj.sessionMeta.bitcode > 0]
+
+        starttm = sess_obj.sessionMeta.trialStartTm[sess_obj.sessionMeta.bitcode > 0]
+        t_offset = cuetm - trial_cue + starttm + trial_start
 
         def extract_unit_data():
             for unit_id, unit_val, unit_depth, unit_chn in zip(
@@ -138,6 +143,7 @@ for fname in fnames:
                 unit_time_convert = utilities.time_unit_conversion_factor[sess_obj.timeUnitNames[unit_val.timeUnit - 1]]  # (-1) to take into account Matlab's 1-based indexing
                 cell_type = 'unidentified' if unit_id <= 1000 else unit_cell_type if unit_id <= 2000 else 'L6 corticothalamic'
                 # -- reconstruct session-long spike times from trial-based cue-aligned spike times
+                # (obj.eventSeriesHash.value are spike times relative to go-cue)
                 if not isinstance(unit_val.eventTrials, Iterable):
                     print(unit_val.eventTrials)
                     unit_val.eventTrials = np.array([unit_val.eventTrials])
@@ -177,4 +183,3 @@ for fname in fnames:
                 trial_id=trial_idx+1, trial_seg_setting=0,
                 psth=psth, psth_time=mat['time']) for trial_idx, psth in enumerate(psths)),
                 skip_duplicates=True, allow_direct_insert=True)
-
