@@ -79,7 +79,7 @@ def export_to_nwb(session_key, nwb_output_dir=default_nwb_output_dir, save=False
         # --- unit spike times ---
         nwbfile.add_unit_column(name='depth', description='depth this unit (um)')
         nwbfile.add_unit_column(name='quality', description='quality of the spike sorted unit (e.g. excellent, good, poor, fair, etc.)')
-        nwbfile.add_unit_column(name='cell_type', description='cell type (e.g. wide width, narrow width spiking)')
+        nwbfile.add_unit_column(name='cell_type', description='cell type (e.g. PTlower, PTupper)')
 
         for unit in (extracellular.UnitSpikeTimes & probe_insertion).fetch(as_dict=True):
             # make an electrode table region (which electrode(s) is this unit coming from)
